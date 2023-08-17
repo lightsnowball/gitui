@@ -71,7 +71,6 @@ pub fn untracked_files_config(
 }
 
 /// get string from config
-
 pub fn get_config_string(
 	repo_path: &RepoPath,
 	key: &str,
@@ -92,7 +91,9 @@ pub fn get_config_string_repo(
 	// gets returned when but it actually works
 	let entry_res = cfg.get_entry(key);
 
-	let Ok(entry) = entry_res else { return Ok(None) };
+	let Ok(entry) = entry_res else {
+		return Ok(None);
+	};
 
 	if entry.has_value() {
 		Ok(entry.value().map(std::string::ToString::to_string))

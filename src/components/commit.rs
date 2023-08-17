@@ -35,7 +35,7 @@ use std::{
 };
 
 enum CommitResult {
-	ComitDone,
+	CommitDone,
 	Aborted,
 }
 
@@ -218,33 +218,46 @@ impl CommitComponent {
 			anyhow::bail!("config commit.gpgsign=true detected.\ngpg signing not supported.\ndeactivate in your repo/gitconfig to be able to commit without signing.");
 		}
 
-		let msg = self.input.get_text().to_string();
-
-		if matches!(
-			self.commit_with_msg(msg)?,
-			CommitResult::ComitDone
-		) {
-			self.options
-				.borrow_mut()
-				.add_commit_msg(self.input.get_text());
-			self.commit_msg_history_idx = 0;
-
-			self.hide();
-			self.queue.push(InternalEvent::Update(NeedsUpdate::ALL));
-			self.input.clear();
-		}
-
-		Ok(())
-	}
-
-	fn commit_with_msg(
-		&mut self,
-		msg: String,
-	) -> Result<CommitResult> {
 		// on exit verify should always be on
 		let verify = self.verify;
 		self.verify = true;
 
+		let msg = self.input.get_text().to_string();
+
+		let mut msg = message_prettify(msg, Some(b'#'))?;
+
+		// check if commit message hook passes
+		if !matches!(
+			self.commit_message_hook(verify, &mut msg)?,
+			CommitResult::CommitDone
+		) {
+			return Ok(());
+		}
+
+		self.do_commit(&msg)?;
+
+		// check if post-commit hook passes
+		if !matches!(
+			self.post_commit_hook()?,
+			CommitResult::CommitDone
+		) {
+			return Ok(());
+		}
+
+		// do the clean up if everything is okay
+		self.options
+			.borrow_mut()
+			.add_commit_msg(self.input.get_text());
+		self.commit_msg_history_idx = 0;
+
+		self.hide();
+		self.queue.push(InternalEvent::Update(NeedsUpdate::ALL));
+		self.input.clear();
+
+		Ok(())
+	}
+
+	fn pre_commit_hook(&self, verify: bool) -> Result<CommitResult> {
 		if verify {
 			// run pre commit hook - can reject commit
 			if let HookResult::NotOk(e) =
@@ -258,12 +271,18 @@ impl CommitComponent {
 			}
 		}
 
-		let mut msg = message_prettify(msg, Some(b'#'))?;
+		Ok(CommitResult::CommitDone)
+	}
 
+	fn commit_message_hook(
+		&self,
+		verify: bool,
+		msg: &mut String,
+	) -> Result<CommitResult> {
 		if verify {
 			// run commit message check hook - can reject commit
 			if let HookResult::NotOk(e) =
-				sync::hooks_commit_msg(&self.repo.borrow(), &mut msg)?
+				sync::hooks_commit_msg(&self.repo.borrow(), msg)?
 			{
 				log::error!("commit-msg hook error: {}", e);
 				self.queue.push(InternalEvent::ShowErrorMsg(
@@ -272,8 +291,11 @@ impl CommitComponent {
 				return Ok(CommitResult::Aborted);
 			}
 		}
-		self.do_commit(&msg)?;
 
+		Ok(CommitResult::CommitDone)
+	}
+
+	fn post_commit_hook(&self) -> Result<CommitResult> {
 		if let HookResult::NotOk(e) =
 			sync::hooks_post_commit(&self.repo.borrow())?
 		{
@@ -283,7 +305,7 @@ impl CommitComponent {
 			)));
 		}
 
-		Ok(CommitResult::ComitDone)
+		Ok(CommitResult::CommitDone)
 	}
 
 	fn do_commit(&self, msg: &str) -> Result<()> {
@@ -357,7 +379,17 @@ impl CommitComponent {
 	}
 
 	pub fn open(&mut self, reword: Option<CommitId>) -> Result<()> {
-		//only clear text if it was not a normal commit dlg before, so to preserve old commit msg that was edited
+		// check if pre-commit hook passes
+		if !matches!(
+			self.pre_commit_hook(self.verify)?,
+			CommitResult::CommitDone
+		) {
+			self.verify = true;
+			return Ok(());
+		}
+
+		// only clear text if it was not a normal commit dlg before, so to preserve old commit msg
+		// that was edited
 		if !matches!(self.mode, Mode::Normal) {
 			self.input.clear();
 		}
