@@ -532,12 +532,17 @@ impl DiffComponent {
 						Path::new(&self.current.path),
 					)?;
 				} else {
-					let hash = diff.hunks[hunk].header_hash;
+					let lines: Vec<DiffLinePosition> = diff.hunks
+						[hunk]
+						.lines
+						.iter()
+						.map(|line| line.position)
+						.collect();
+
 					sync::stage_hunk(
 						&self.repo.borrow(),
 						&self.current.path,
-						hash,
-						Some(self.options.borrow().diff_options()),
+						&lines,
 					)?;
 				}
 

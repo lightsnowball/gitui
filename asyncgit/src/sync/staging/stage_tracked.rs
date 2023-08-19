@@ -11,7 +11,11 @@ use easy_cast::Conv;
 use scopetime::scope_time;
 use std::path::Path;
 
-///
+/// Lightsnowball - i think this doesn't work for untracked (component/diff.rs says this, and it
+/// really doesn't work, but dont know whose responsibility this is)
+/// - Yup, won't work with untracked, not sure if this can be modified or whole new method is needed.
+/// - CHECK THIS OUT! It also doesn't work when you want to unstage file line by line :))) last line
+/// won't unstage (like newline or smth like that)
 pub fn stage_lines(
 	repo_path: &RepoPath,
 	file_path: &str,

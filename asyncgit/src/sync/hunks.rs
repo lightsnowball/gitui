@@ -1,5 +1,5 @@
 use super::{
-	diff::{get_diff_raw, DiffOptions, HunkHeader},
+	diff::{get_diff_raw, DiffLinePosition, DiffOptions, HunkHeader},
 	RepoPath,
 };
 use crate::{
@@ -10,30 +10,22 @@ use crate::{
 use git2::{ApplyLocation, ApplyOptions, Diff};
 use scopetime::scope_time;
 
+/// TODO lightsnowball - maybe less verbose and more useful information here
+/// Method for staging part/chunk of source called hunk.
 ///
+/// Reusing `stage_lines` method for staging hunks we get out of the box more tests and easier
+/// maintenance. Based on lines provided by given hunk we iteratively delegate work to
+/// `stage_lines` and forward given response.
 pub fn stage_hunk(
 	repo_path: &RepoPath,
 	file_path: &str,
-	hunk_hash: u64,
-	options: Option<DiffOptions>,
+	lines: &[DiffLinePosition],
 ) -> Result<()> {
 	scope_time!("stage_hunk");
 
-	let repo = repo(repo_path)?;
-
-	let diff = get_diff_raw(&repo, file_path, false, false, options)?;
-
-	let mut opt = ApplyOptions::new();
-	opt.hunk_callback(|hunk| {
-		hunk.map_or(false, |hunk| {
-			let header = HunkHeader::from(hunk);
-			hash(&header) == hunk_hash
-		})
-	});
-
-	repo.apply(&diff, ApplyLocation::Index, Some(&mut opt))?;
-
-	Ok(())
+	crate::sync::staging::stage_lines(
+		repo_path, file_path, false, lines,
+	)
 }
 
 /// this will fail for an all untracked file
