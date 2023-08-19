@@ -60,7 +60,7 @@ impl NewFromOldContent {
 			self.lines.push((*line).to_string());
 		}
 		let lines = self.lines.join("\n");
-		if lines.ends_with(NEWLINE) {
+		if lines.ends_with(NEWLINE) || lines.is_empty() {
 			lines
 		} else {
 			let mut lines = lines;

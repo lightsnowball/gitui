@@ -1,17 +1,19 @@
-use super::apply_selection;
+use crate::sync::patches::get_file_diff_patch_and_hunklines;
+use crate::sync::repo;
+use crate::sync::staging::apply_selection;
 use crate::{
 	error::{Error, Result},
-	sync::{
-		diff::DiffLinePosition,
-		patches::get_file_diff_patch_and_hunklines, repository::repo,
-		RepoPath,
-	},
+	sync::{diff::DiffLinePosition, RepoPath},
 };
 use easy_cast::Conv;
+use git2::{
+	Index, IndexEntry, IndexEntryExtendedFlag, IndexEntryFlag,
+	IndexTime, Oid,
+};
 use scopetime::scope_time;
 use std::path::Path;
 
-///
+/// lightsnowball - docs
 pub fn stage_lines(
 	repo_path: &RepoPath,
 	file_path: &str,
@@ -25,16 +27,22 @@ pub fn stage_lines(
 	}
 
 	let repo = repo(repo_path)?;
-	// log::debug!("stage_lines: {:?}", lines);
 
 	let mut index = repo.index()?;
 	index.read(true)?;
-	let mut idx =
-		index.get_path(Path::new(file_path), 0).ok_or_else(|| {
-			Error::Generic(String::from(
-				"only non new files supported",
-			))
-		})?;
+
+	let mut idx = if let Some(idx) =
+		index.get_path(Path::new(file_path), 0)
+	{
+		idx
+	} else {
+		stage_with_intent_to_add(&mut index, file_path)?;
+
+		index.get_path(Path::new(file_path), 0).ok_or(
+			Error::Generic(format!("Couldn't get path {file_path}")),
+		)?
+	};
+
 	let blob = repo.find_blob(idx.id)?;
 	let indexed_content = String::from_utf8(blob.content().into())?;
 
@@ -52,7 +60,49 @@ pub fn stage_lines(
 
 	idx.id = blob_id;
 	idx.file_size = u32::try_conv(new_content.as_bytes().len())?;
+	// lightsnowball - not sure why 4 or what 4, investigation needed...
+	// hard-code to 4, otherwise tracked new files won't stage changes
+	idx.flags = 4;
+
 	index.add(&idx)?;
+	index.write()?;
+
+	// if file doesn't have any staged content, we must reset it so new files can be returned to
+	// untracked state
+	if new_content.is_empty() {
+		repo.reset_default(None, [file_path]).map_err(|_error| {
+			Error::Generic(format!("Couldn't reset {file_path}"))
+		})?;
+	}
+
+	Ok(())
+}
+
+/// lightsnowball - todo docs
+fn stage_with_intent_to_add(
+	index: &mut Index,
+	file_path: &str,
+) -> Result<()> {
+	let index_entry = IndexEntry {
+		ctime: IndexTime::new(0, 0),
+		mtime: IndexTime::new(0, 0),
+		dev: 0,
+		ino: 0,
+		mode: 0o100_644, // TODO lightsnowball - check if this has to be take from file instead of hardcoding it like this
+		uid: 0,
+		gid: 0,
+		file_size: 0,
+		id: Oid::zero(),
+		flags: IndexEntryFlag::EXTENDED.bits(),
+		flags_extended: IndexEntryExtendedFlag::INTENT_TO_ADD.bits(),
+		path: file_path.bytes().collect(),
+	};
+
+	index.add_frombuffer(&index_entry, &[]).map_err(|_error| {
+		Error::Generic(format!(
+			"Failed to start tracking file {file_path}"
+		))
+	})?;
 
 	index.write()?;
 	index.read(true)?;
@@ -139,6 +189,10 @@ c = 4";
 
 		let diff = get_diff(path, "test.txt", true, None).unwrap();
 
+		// lightsnowball - these checks are failing, but not sure why it seems that
+		// `asyncgit/src/sync/staging/mod.rs` implementation of `NewFromOldContent::finish()`
+		// modification is causing this to fail, however I'm not sure if that is something we want,
+		// make sure you check history of this test and why is it implemented that way
 		assert_eq!(diff.lines, 5);
 		assert_eq!(&*diff.hunks[0].lines[0].content, "@@ -1,2 +1 @@");
 	}
