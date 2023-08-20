@@ -37,6 +37,12 @@ fn index_entry_for_untracked_file(
 	}
 }
 
+/// Lightsnowball - there is some odd behaviour when one uses git add -N outside of console and
+/// then tries to stage files. While staging lines, git cli won't notify anything is changed (??)
+/// and when commited there will staged part that says `deleted` where there are lines from last
+/// commit, and unstaged tracked file with all changes. Something is really fucked up regarding
+/// this
+///
 /// Lightsnowball - i think this doesn't work for untracked (component/diff.rs says this, and it
 /// really doesn't work, but dont know whose responsibility this is)
 /// - Yup, won't work with untracked, not sure if this can be modified or whole new method is needed.
