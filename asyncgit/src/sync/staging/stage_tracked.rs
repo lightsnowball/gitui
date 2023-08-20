@@ -63,10 +63,21 @@ pub fn stage_lines(
 		Some(idx) => idx,
 		None => {
 			index
-				.add_frombuffer(
-					&index_entry_for_untracked_file(file_path),
-					&[],
-				)
+				// lightsnowball - this does track file, but not sure what are side effects and it
+				// doesn't work as expected later on
+				// it seems this is okay (doesn't justify my lack of knowledge what it does)
+				// if I use git add -N new_file, then we have same problem, so it seems code below
+				// is buggy/featureless
+				//
+				// .add_frombuffer(
+				// 	&index_entry_for_untracked_file(file_path),
+				// 	&[],
+				// )
+				//
+				// lightsnowball
+				// for some reason this doesn't
+				// follow the intent-to-add flag
+				.add(&index_entry_for_untracked_file(file_path))
 				.unwrap();
 
 			index.write()?;
