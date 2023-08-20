@@ -1,15 +1,9 @@
-use super::apply_selection;
+use crate::sync::repo;
 use crate::{
 	error::Result,
-	sync::{
-		diff::DiffLinePosition,
-		patches::get_file_diff_patch_and_hunklines, repository::repo,
-		RepoPath,
-	},
+	sync::{diff::DiffLinePosition, RepoPath},
 };
-use easy_cast::Conv;
 use scopetime::scope_time;
-use std::path::Path;
 
 /// TODO lightsnowball - bad docs but FI
 /// Private method used for tracking untracked file. Without tracking it we cannot actually
@@ -24,16 +18,12 @@ fn index_entry_for_untracked_file(
 	git2::IndexEntry {
 		ctime: git2::IndexTime::new(0, 0),
 		mtime: git2::IndexTime::new(0, 0),
-		dev: 0,         // don't know what this is
-		ino: 0,         // don't know what this is
+		dev: 0,
+		ino: 0,
 		mode: 0o100644, // https://git-scm.com/docs/index-format check it out
-		uid: 1000,
-		gid: 1000,
-		file_size: std::fs::File::open(file_path)
-			.unwrap()
-			.metadata()
-			.unwrap()
-			.len() as u32,
+		uid: 0,
+		gid: 0,
+		file_size: 0,
 		id: git2::Oid::hash_file(git2::ObjectType::Blob, file_path)
 			.unwrap(),
 		flags: git2::IndexEntryFlag::EXTENDED.bits(),
@@ -67,39 +57,43 @@ pub fn stage_lines(
 
 	// this should be only start tracking file, but it stages it, not sure why :thinker:
 	index
-		.add(&index_entry_for_untracked_file(file_path))
+		.add_frombuffer(
+			&index_entry_for_untracked_file(file_path),
+			&[],
+		)
 		.unwrap();
 	index.write()?;
-	index.read(true)?;
+	// index.read(true)?;
 
-	let mut idx = match index.get_path(Path::new(file_path), 0) {
-		Some(idx) => idx,
-		None => return Ok(()),
-	};
+	// let mut blob = match index.get_path(Path::new(file_path), 0) {
+	// 	Some(idx) => repo.find_blob(idx.id)?,
+	// 	None => {
+	// 		let oid = repo.blob_path(Path::new(file_path))?;
+	// 		repo.find_blob(oid)?
+	// 	}
+	// };
 
-	log::trace!("idx value lighty: {:?}", idx);
+	// let indexed_content = String::from_utf8(blob.content().into())?;
 
-	let blob = repo.find_blob(idx.id)?;
-	let indexed_content = String::from_utf8(blob.content().into())?;
+	// let new_content = {
+	// 	let (_patch, hunks) = get_file_diff_patch_and_hunklines(
+	// 		&repo, file_path, is_stage, false,
+	// 	)?;
 
-	let new_content = {
-		let (_patch, hunks) = get_file_diff_patch_and_hunklines(
-			&repo, file_path, is_stage, false,
-		)?;
+	// 	let old_lines = indexed_content.lines().collect::<Vec<_>>();
 
-		let old_lines = indexed_content.lines().collect::<Vec<_>>();
+	// 	apply_selection(lines, &hunks, &old_lines, is_stage, false)?
+	// };
 
-		apply_selection(lines, &hunks, &old_lines, is_stage, false)?
-	};
+	// let mut idx = index_entry_for_untracked_file(file_path);
+	// let blob_id = repo.blob(new_content.as_bytes())?;
 
-	let blob_id = repo.blob(new_content.as_bytes())?;
+	// idx.id = blob_id;
+	// idx.file_size = u32::try_conv(new_content.as_bytes().len())?;
+	// index.add(&idx)?;
 
-	idx.id = blob_id;
-	idx.file_size = u32::try_conv(new_content.as_bytes().len())?;
-	index.add(&idx)?;
-
-	index.write()?;
-	index.read(true)?;
+	// index.write()?;
+	// index.read(true)?;
 
 	Ok(())
 }
