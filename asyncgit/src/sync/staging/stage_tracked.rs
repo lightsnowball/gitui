@@ -1,6 +1,6 @@
 use super::apply_selection;
 use crate::{
-	error::{Error, Result},
+	error::Result,
 	sync::{
 		diff::DiffLinePosition,
 		patches::get_file_diff_patch_and_hunklines, repository::repo,
@@ -10,6 +10,38 @@ use crate::{
 use easy_cast::Conv;
 use scopetime::scope_time;
 use std::path::Path;
+
+/// TODO lightsnowball - bad docs but FI
+/// Private method used for tracking untracked file. Without tracking it we cannot actually
+/// stage lines, so we must stage it with intent to add (link?) to be able to perform necessary
+/// commands.
+fn index_entry_for_untracked_file(
+	file_path: &str,
+) -> git2::IndexEntry {
+	// lightsnowball - try to find other way how to add file, should be in this repo somewhere (?)
+	// Cannot read file, its not indexed so i guess thats the problem about finding it...
+	// eprintln!("Path to file lighty: {}", file_path);
+	git2::IndexEntry {
+		ctime: git2::IndexTime::new(0, 0),
+		mtime: git2::IndexTime::new(0, 0),
+		dev: 0,         // don't know what this is
+		ino: 0,         // don't know what this is
+		mode: 0o100644, // https://git-scm.com/docs/index-format check it out
+		uid: 1000,
+		gid: 1000,
+		file_size: std::fs::File::open(file_path)
+			.unwrap()
+			.metadata()
+			.unwrap()
+			.len() as u32,
+		id: git2::Oid::hash_file(git2::ObjectType::Blob, file_path)
+			.unwrap(),
+		flags: git2::IndexEntryFlag::EXTENDED.bits(),
+		flags_extended: git2::IndexEntryExtendedFlag::INTENT_TO_ADD
+			.bits(),
+		path: file_path.bytes().into_iter().collect(),
+	}
+}
 
 /// Lightsnowball - i think this doesn't work for untracked (component/diff.rs says this, and it
 /// really doesn't work, but dont know whose responsibility this is)
@@ -29,16 +61,24 @@ pub fn stage_lines(
 	}
 
 	let repo = repo(repo_path)?;
-	// log::debug!("stage_lines: {:?}", lines);
 
 	let mut index = repo.index()?;
 	index.read(true)?;
-	let mut idx =
-		index.get_path(Path::new(file_path), 0).ok_or_else(|| {
-			Error::Generic(String::from(
-				"only non new files supported",
-			))
-		})?;
+
+	// this should be only start tracking file, but it stages it, not sure why :thinker:
+	index
+		.add(&index_entry_for_untracked_file(file_path))
+		.unwrap();
+	index.write()?;
+	index.read(true)?;
+
+	let mut idx = match index.get_path(Path::new(file_path), 0) {
+		Some(idx) => idx,
+		None => return Ok(()),
+	};
+
+	log::trace!("idx value lighty: {:?}", idx);
+
 	let blob = repo.find_blob(idx.id)?;
 	let indexed_content = String::from_utf8(blob.content().into())?;
 
