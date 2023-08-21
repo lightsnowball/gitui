@@ -96,12 +96,15 @@ pub(crate) fn apply_selection(
 	let mut first_hunk_encountered = false;
 	for hunk in hunks {
 		let hunk_start = if is_staged || reverse {
+			log::debug!("lighty: I'm staged or reversed!");
 			usize::try_from(hunk.hunk.new_start)?
 		} else {
+			log::debug!("lighty: I'm not staged or reversed!");
 			usize::try_from(hunk.hunk.old_start)?
 		};
 
 		if !first_hunk_encountered {
+			log::debug!("I'm in first hunk!");
 			let any_slection_in_hunk =
 				hunk.lines.iter().any(|line| {
 					let line: DiffLinePosition = line.into();
@@ -110,6 +113,9 @@ pub(crate) fn apply_selection(
 
 			first_hunk_encountered = any_slection_in_hunk;
 		}
+
+		log::debug!("lighty: first_hunk_encountered: {first_hunk_encountered}");
+		// to this point works well
 
 		if first_hunk_encountered {
 			new_content.catchup_to_hunkstart(hunk_start, old_lines);

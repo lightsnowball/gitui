@@ -28,8 +28,9 @@ fn index_entry_for_untracked_file(
 		uid: 0,
 		gid: 0,
 		file_size: 0,
-		id: git2::Oid::hash_file(git2::ObjectType::Blob, file_path)
-			.unwrap(),
+		id: git2::Oid::zero(),
+		// git2::Oid::hash_file(git2::ObjectType::Blob, file_path)
+		//.unwrap(),
 		flags: git2::IndexEntryFlag::EXTENDED.bits(),
 		flags_extended: git2::IndexEntryExtendedFlag::INTENT_TO_ADD
 			.bits(),
@@ -75,15 +76,15 @@ pub fn stage_lines(
 				// if I use git add -N new_file, then we have same problem, so it seems code below
 				// is buggy/featureless
 				//
-				// .add_frombuffer(
-				// 	&index_entry_for_untracked_file(file_path),
-				// 	&[],
-				// )
+				.add_frombuffer(
+					&index_entry_for_untracked_file(file_path),
+					&[],
+				)
 				//
 				// lightsnowball
 				// for some reason this doesn't
 				// follow the intent-to-add flag
-				.add(&index_entry_for_untracked_file(file_path))
+				// .add(&index_entry_for_untracked_file(file_path))
 				.unwrap();
 
 			index.write()?;
@@ -93,10 +94,14 @@ pub fn stage_lines(
 		}
 	};
 
+	log::debug!("lighty: index {:?}", idx);
+
 	log::trace!("idx value lighty: {:?}", idx);
 
 	let blob = repo.find_blob(idx.id)?;
 	let indexed_content = String::from_utf8(blob.content().into())?;
+
+	log::debug!("lighty: Indexed content: {indexed_content}");
 
 	let new_content = {
 		let (_patch, hunks) = get_file_diff_patch_and_hunklines(
@@ -104,13 +109,20 @@ pub fn stage_lines(
 		)?;
 
 		let old_lines = indexed_content.lines().collect::<Vec<_>>();
+		log::debug!("lighty: old lines: {:?}", old_lines);
 
 		apply_selection(lines, &hunks, &old_lines, is_stage, false)?
 	};
 
-	let blob_id = repo.blob(new_content.as_bytes())?;
+	log::debug!("lighty: set new content: {new_content}");
 
+	let blob_id = repo.blob(new_content.as_bytes())?;
+	log::debug!("lighty: blob id of new content: {blob_id}");
+
+	// maybe this is bad because something ???
 	idx.id = blob_id;
+	idx.flags = 4; // check what this flag is and if this can stay baked in for all cases!!!
+	idx.flags_extended = 0;
 	idx.file_size = u32::try_conv(new_content.as_bytes().len())?;
 	index.add(&idx)?;
 
